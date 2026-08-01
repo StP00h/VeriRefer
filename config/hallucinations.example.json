@@ -1,0 +1,4 @@
+{
+  "_comment": "Optional blocklist of known-hallucinated records. Copy to hallucinations.json (git-ignored) and add [surname, year] pairs. Each pair blocks a Crossref record whose publication year matches and whose authors or title contain the surname. Empty by default — DOI resolution and Crossref confirmation already catch fabricated records; add entries only when a specific hallucinated record keeps passing those checks.",
+  "entries": []
+}

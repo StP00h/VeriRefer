@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to .mcp.json to expose your Zotero library to an MCP client (Claude Code, Claude Desktop, etc.). Optional — the CLI example in examples/ works without MCP.",
+  "_install": "uv tool install zotero-mcp-server   (or: pip install zotero-mcp-server)",
+  "_command_note": "Use the bare command name if zotero-mcp is on your PATH. If not, replace it with the absolute path printed by `which zotero-mcp`.",
+  "mcpServers": {
+    "zotero": {
+      "command": "zotero-mcp",
+      "env": {
+        "ZOTERO_LOCAL": "true"
+      }
+    }
+  }
+}

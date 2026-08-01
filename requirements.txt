@@ -1,0 +1,6 @@
+# VeriRef has no hard third-party dependencies — lib/http_client.py falls
+# back to the standard library's urllib when `requests` is unavailable.
+#
+# `requests` is recommended: it enables connection pooling, which noticeably
+# speeds up the hundreds of small API calls made during a full search run.
+requests>=2.28.0

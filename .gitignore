@@ -1,0 +1,34 @@
+# --- Secrets: never commit real credentials ---------------------------------
+config/api_keys.json
+config/hallucinations.json
+.env
+*.pem
+*.key
+# The sanitized templates ARE tracked:
+!config/api_keys.example.json
+!.mcp.json.example
+
+# --- Run output -------------------------------------------------------------
+output/
+output_*/
+*/corpus.json
+*/references.bib
+*/citation_keys.json
+# ...but the shipped example fixtures are tracked:
+!examples/sample_corpus.json
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Editors / OS -----------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp

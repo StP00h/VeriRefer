@@ -1,0 +1,66 @@
+{
+  "_comment": "Copy this file to api_keys.json and fill in your own keys. api_keys.json is git-ignored.",
+  "_instructions": "Every key is OPTIONAL. Missing keys are skipped gracefully — the search degrades rather than fails. Any value here can also be supplied via environment variable (see README), which takes precedence.",
+
+  "openalex": {
+    "enabled": true,
+    "api_key": "",
+    "mailto": "",
+    "_env": "OPENALEX_API_KEY / OPENALEX_MAILTO",
+    "_note": "Free, no key required. Adding `mailto` joins the faster polite pool. Docs: https://developers.openalex.org/"
+  },
+
+  "core": {
+    "enabled": true,
+    "api_key": "",
+    "_env": "CORE_API_KEY",
+    "_note": "Free with key (100 req/min). Register: https://core.ac.uk/services/api/#form"
+  },
+
+  "scopus": {
+    "enabled": true,
+    "api_key": "",
+    "_env": "SCOPUS_API_KEY",
+    "_note": "Requires institutional access. Free tier 5,000 calls/week: https://dev.elsevier.com/"
+  },
+
+  "semantic_scholar": {
+    "enabled": true,
+    "api_key": "",
+    "_env": "SEMANTIC_SCHOLAR_API_KEY",
+    "_note": "Works without a key at a lower rate limit. Keyed access is 1 request/second, cumulative across all endpoints. Request one: https://www.semanticscholar.org/product/api"
+  },
+
+  "unpaywall": {
+    "enabled": true,
+    "email": "",
+    "_env": "UNPAYWALL_EMAIL",
+    "_note": "No key needed, but an email is a REQUIRED parameter. Layer 6 OA lookup is skipped when this is empty."
+  },
+
+  "crossref": {
+    "enabled": true,
+    "mailto": "",
+    "_env": "CROSSREF_MAILTO",
+    "_note": "Free. Adding an email joins the polite pool (50 req/5min)."
+  },
+
+  "arxiv": {
+    "enabled": true,
+    "_note": "No key required. Free and unlimited via http://export.arxiv.org/api/query"
+  },
+
+  "zenodo": {
+    "enabled": true,
+    "access_token": "",
+    "_env": "ZENODO_ACCESS_TOKEN",
+    "_note": "Optional — works without a token. Create one: https://zenodo.org/account/settings/applications/"
+  },
+
+  "doaj": {
+    "enabled": true,
+    "api_key": "",
+    "_env": "DOAJ_API_KEY",
+    "_note": "Optional — free without a key (100 req/min). Apply: https://doaj.org/apply-for-api-key/"
+  }
+}
