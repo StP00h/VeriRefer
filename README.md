@@ -1,4 +1,4 @@
-# VeriRef
+# VeriRefer
 
 Academic reference toolkit: 6-layer literature search across nine scholarly APIs, DOI verification against doi.org/Crossref, metadata completion, and clean BibTeX/CSL-JSON export. Zero required dependencies, all credentials optional.
 
@@ -7,7 +7,7 @@ missing bibliographic fields from Crossref and OpenAlex, and emits clean BibTeX
 with collision-resistant citation keys.
 
 Built for a specific problem: **LLM-assisted literature citations that do not
-exist.** VeriRef resolves every DOI against `doi.org`, cross-checks
+exist.** VeriRefer resolves every DOI against `doi.org`, cross-checks
 each record against Crossref, and flags anything it cannot confirm — so
 fabricated references are caught before they reach your bibliography.
 
@@ -32,8 +32,8 @@ python run_check.py  --run-dir ./output
 ## Install
 
 ```bash
-git clone https://github.com/StP00h/VeriRef.git
-cd VeriRef
+git clone https://github.com/StP00h/VeriRefer.git
+cd VeriRefer
 pip install -r requirements.txt    # optional — see below
 ```
 
@@ -47,7 +47,7 @@ recommended only because connection pooling speeds up the many small API calls.
 
 **Every credential is optional.** Layers without a key either fall back to
 unauthenticated access or are skipped — the search degrades, it does not fail.
-You can run VeriRef with no configuration at all.
+You can run VeriRefer with no configuration at all.
 
 Credentials resolve in this order: **environment variable → config file → skip**.
 
@@ -232,7 +232,7 @@ records along the way.
 ```bash
 python examples/corpus_to_csl.py --run-dir ./output --verified-only
 zotero-cli add csl-json --file ./output/zotero_import.json \
-  -c "Collection-Name" --create-collections --tags "veriref"
+  -c "Collection-Name" --create-collections --tags "verirefer"
 ```
 
 A five-record sample corpus is included, so the conversion can be tried without
@@ -243,7 +243,7 @@ any API keys. See [examples/README.md](examples/README.md).
 ## Layout
 
 ```
-VeriRef/
+VeriRefer/
 ├── run_search.py               # CLI: literature search
 ├── run_check.py                # CLI: DOI verification + metadata completion
 ├── lib/
