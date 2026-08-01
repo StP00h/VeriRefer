@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VeriRef — DOI Check + Reference Completion CLI (DOI检查 + 文献信息补全)
+VeriRefer — DOI Check + Reference Completion CLI (DOI检查 + 文献信息补全)
 
 Thin CLI wrapper around lib.reference_checker. Takes a corpus.json (from
 run_search.py or any compatible source) and:
@@ -34,7 +34,7 @@ from reference_checker import build_references_bib  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="VeriRef: validate DOIs and complete reference metadata -> references.bib + citation_keys.json",
+        description="VeriRefer: validate DOIs and complete reference metadata -> references.bib + citation_keys.json",
     )
     parser.add_argument("--run-dir", required=True, help="Directory containing corpus.json (outputs written here)")
     parser.add_argument("--corpus", help="Override corpus.json input path (default: <run-dir>/corpus.json)")

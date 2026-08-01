@@ -62,7 +62,7 @@ export SCOPUS_API_KEY="..."
 export OPENALEX_MAILTO="you@example.com"
 export UNPAYWALL_EMAIL="you@example.com"    # required for Unpaywall OA lookup
 export CROSSREF_MAILTO="you@example.com"    # joins Crossref's faster polite pool
-export VERIREF_MAILTO="you@example.com" # contact address for run_check.py
+export VERIREFER_MAILTO="you@example.com" # contact address for run_check.py
 ```
 
 ### Option B — config file

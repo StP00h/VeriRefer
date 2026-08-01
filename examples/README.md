@@ -1,6 +1,6 @@
 # Example — from literature search to your Zotero library
 
-This walkthrough runs the full VeriRef pipeline and imports the verified
+This walkthrough runs the full VeriRefer pipeline and imports the verified
 results into a local Zotero library using
 [`zotero-cli`](https://github.com/54yyyu/zotero-mcp).
 
@@ -11,7 +11,7 @@ run_search.py          run_check.py            corpus_to_csl.py         zotero-c
                               citation_keys.json    (CSL-JSON)
 ```
 
-VeriRef speaks `corpus.json`; Zotero speaks CSL-JSON. `corpus_to_csl.py`
+VeriRefer speaks `corpus.json`; Zotero speaks CSL-JSON. `corpus_to_csl.py`
 is the adapter between them — and, importantly, the place where unverified
 records get dropped.
 
@@ -54,7 +54,7 @@ zotero-cli library list
 
 ## Quick try — no API keys needed
 
-`sample_corpus.json` is a five-record fixture in VeriRef's corpus format,
+`sample_corpus.json` is a five-record fixture in VeriRefer's corpus format,
 so you can exercise the conversion without running a real search:
 
 ```bash
@@ -129,7 +129,7 @@ python examples/corpus_to_csl.py --run-dir ./output --verified-only --limit 2 \
   --out ./output/trial.json
 
 zotero-cli add csl-json --file ./output/trial.json \
-  -c "VeriRef Trial" --create-collections --tags "veriref"
+  -c "VeriRefer Trial" --create-collections --tags "verirefer"
 ```
 
 Check the result in Zotero, then import everything:
@@ -137,7 +137,7 @@ Check the result in Zotero, then import everything:
 ```bash
 zotero-cli add csl-json --file ./output/zotero_import.json \
   -c "Collection-Name" --create-collections \
-  --tags "veriref,20YY-review" \
+  --tags "verirefer,20YY-review" \
   --if-exists file
 ```
 

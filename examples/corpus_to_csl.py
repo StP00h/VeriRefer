@@ -2,7 +2,7 @@
 """
 Example: corpus.json  ->  CSL-JSON  ->  Zotero (via zotero-cli)
 
-VeriRef emits `corpus.json` (search results) and `citation_keys.json`
+VeriRefer emits `corpus.json` (search results) and `citation_keys.json`
 (per-paper DOI verification status). Zotero does not read those formats, but it
 does read CSL-JSON — the same interchange format used by Pandoc and most
 reference managers. This script performs that translation.
@@ -13,7 +13,7 @@ Typical pipeline:
     python run_check.py  --run-dir ./output
     python examples/corpus_to_csl.py --run-dir ./output --verified-only
     zotero-cli add csl-json --file ./output/zotero_import.json \
-        -c "Collection-Name" --create-collections --tags "veriref"
+        -c "Collection-Name" --create-collections --tags "verirefer"
 
 `--verified-only` is the reason this step is worth doing: it drops any paper
 whose DOI did not resolve and which Crossref could not confirm, so hallucinated
@@ -50,7 +50,7 @@ _ORG_KEYWORDS = {
     "inc", "ltd", "llc", "gmbh", "corp", "corporation", "company",
 }
 
-# VeriRef `source_type` values (Crossref/OpenAlex vocabularies) -> CSL types.
+# VeriRefer `source_type` values (Crossref/OpenAlex vocabularies) -> CSL types.
 _CSL_TYPE_BY_SOURCE_TYPE = {
     "journal-article": "article-journal",
     "article": "article-journal",
@@ -80,7 +80,7 @@ def _clean(value: Any) -> str:
 def parse_author(name: str) -> dict[str, str]:
     """Convert one author string into a CSL name object.
 
-    VeriRef's corpus mixes two conventions depending on the source API:
+    VeriRefer's corpus mixes two conventions depending on the source API:
     Crossref yields "Family, G. I." while OpenAlex yields "Given Family".
     Anything we cannot split confidently becomes a CSL `literal` name, which
     Zotero renders verbatim rather than mangling.
@@ -144,7 +144,7 @@ def _issued(paper: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def paper_to_csl(paper: dict[str, Any], citekey: str | None = None) -> dict[str, Any]:
-    """Translate one VeriRef paper record into a CSL-JSON item."""
+    """Translate one VeriRefer paper record into a CSL-JSON item."""
     authors = [parse_author(a) for a in (paper.get("authors") or []) if _clean(a)]
     authors = [a for a in authors if a]
 
@@ -153,7 +153,7 @@ def paper_to_csl(paper: dict[str, Any], citekey: str | None = None) -> dict[str,
     item: dict[str, Any] = {
         # `id` becomes the Better BibTeX citation key in Zotero, so prefer the
         # collision-resistant key run_check.py already computed.
-        "id": citekey or _clean(paper.get("paper_id")) or "veriref-item",
+        "id": citekey or _clean(paper.get("paper_id")) or "verirefer-item",
         "type": _csl_type(paper),
         "title": _clean(paper.get("title")) or "Untitled",
     }
@@ -212,7 +212,7 @@ def load_citekeys(run_dir: str, explicit_path: str | None = None) -> tuple[dict[
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Convert VeriRef corpus.json into CSL-JSON for import into Zotero.",
+        description="Convert VeriRefer corpus.json into CSL-JSON for import into Zotero.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Example:\n"
@@ -290,7 +290,7 @@ def main() -> int:
         print(f"     skipped {skipped_no_doi} without a DOI")
     print("\nNext step — import into Zotero (Zotero must be running):")
     print(f"     zotero-cli add csl-json --file {out_path} \\")
-    print('         -c "VeriRef Import" --create-collections --tags "veriref"')
+    print('         -c "VeriRefer Import" --create-collections --tags "verirefer"')
     return 0
 
 

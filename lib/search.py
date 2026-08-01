@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VeriRef — Literature Search Module (文献检索)
+VeriRefer — Literature Search Module (文献检索)
 
 Implements a 6-layer search strategy across academic APIs, followed by
 deduplication, relevance scoring, and metadata enrichment.
@@ -308,8 +308,8 @@ class SearchConfig:
         """Polite-pool User-Agent. Omits the mailto clause when no email is set,
         rather than sending a placeholder address to the API."""
         if self.crossref_mailto:
-            return f"VeriRef/1.0 (mailto:{self.crossref_mailto})"
-        return "VeriRef/1.0"
+            return f"VeriRefer/1.0 (mailto:{self.crossref_mailto})"
+        return "VeriRefer/1.0"
 
 
 def _load_rq_boundaries(rq_path: str) -> tuple[str, list[str], list[str]]:
@@ -1122,7 +1122,7 @@ if __name__ == "__main__":
     # Minimal CLI when invoked directly: python -m lib.search --run-dir RUN --rq RQ
     import argparse
 
-    parser = argparse.ArgumentParser(description="VeriRef literature search")
+    parser = argparse.ArgumentParser(description="VeriRefer literature search")
     parser.add_argument("--run-dir", required=True, help="Output directory for corpus.json")
     parser.add_argument("--config", default=_DEFAULT_CONFIG_PATH, help="Path to api_keys.json")
     parser.add_argument("--rq", help="Path to rq_final.json (provides keywords/time range)")

@@ -51,13 +51,13 @@ def _load_known_hallucinations() -> set[tuple[str, str]]:
 _KNOWN_HALLUCINATIONS = _load_known_hallucinations()
 
 # Crossref and OpenAlex grant faster, more reliable service to clients that
-# identify themselves ("polite pool"). Set VERIREF_MAILTO to your email to
+# identify themselves ("polite pool"). Set VERIREFER_MAILTO to your email to
 # opt in; otherwise we send an anonymous but still well-formed User-Agent.
-_CONTACT_EMAIL = os.environ.get("VERIREF_MAILTO", "").strip()
+_CONTACT_EMAIL = os.environ.get("VERIREFER_MAILTO", "").strip()
 _USER_AGENT = (
-    f"VeriRef/1.0 (mailto:{_CONTACT_EMAIL})"
+    f"VeriRefer/1.0 (mailto:{_CONTACT_EMAIL})"
     if _CONTACT_EMAIL
-    else "VeriRef/1.0"
+    else "VeriRefer/1.0"
 )
 
 

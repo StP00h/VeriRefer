@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VeriRef — Literature Search CLI (文献检索)
+VeriRefer — Literature Search CLI (文献检索)
 
 Thin CLI wrapper around lib.search.run_search(). Runs the 6-layer academic
 search pipeline and writes corpus.json into the target run directory.
@@ -33,7 +33,7 @@ _DEFAULT_CONFIG = str(_SKILL_ROOT / "config" / "api_keys.json")
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="VeriRef: run 6-layer academic literature search -> corpus.json",
+        description="VeriRefer: run 6-layer academic literature search -> corpus.json",
     )
     parser.add_argument("--run-dir", required=True, help="Output directory (corpus.json written here by default)")
     parser.add_argument("--config", default=_DEFAULT_CONFIG, help=f"Path to api_keys.json (default: {_DEFAULT_CONFIG})")
