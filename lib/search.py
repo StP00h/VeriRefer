@@ -38,6 +38,7 @@ if str(_THIS_DIR) not in sys.path:
 
 from http_client import http_get  # noqa: E402
 from reference_checker import _crossref_record_blocklisted  # noqa: E402
+from s2 import S2Client, S2Error  # noqa: E402
 
 # Default config location: <skill_root>/config/api_keys.json
 _DEFAULT_CONFIG_PATH = str(_THIS_DIR.parent / "config" / "api_keys.json")
@@ -303,6 +304,21 @@ class SearchConfig:
         self.search_keywords = search_keywords
         self.key_concepts = key_concepts
 
+        # Shared S2 client (graph + recommendations); key-drop on 403 applies
+        # to every S2 call in the run.
+        self.s2_client = S2Client(self.s2_key)
+        # Layer 1b (recommended-papers expansion) is opt-in via config or CLI;
+        # off by default for unattended runs since the recommender needs a
+        # working key to avoid the heavily-throttled keyless pool.
+        s2_entry = config.get("semantic_scholar") or {}
+        self.s2_recommendations = bool(s2_entry.get("recommendations", False))
+        try:
+            self.s2_recommend_seeds = int(s2_entry.get("recommendations_seeds", 3))
+        except (ValueError, TypeError):
+            self.s2_recommend_seeds = 3
+        # Layers append human-readable warnings here; surfaced at end of run.
+        self.layer_warnings: list[str] = []
+
     @property
     def crossref_user_agent(self) -> str:
         """Polite-pool User-Agent. Omits the mailto clause when no email is set,
@@ -332,51 +348,149 @@ def _load_rq_boundaries(rq_path: str) -> tuple[str, list[str], list[str]]:
 
 def _layer1_semantic_scholar(cfg: SearchConfig) -> list[dict[str, Any]]:
     print("\n[Layer 1] Semantic Scholar search...")
-
-    def s2_search(query: str, limit: int = 10) -> list[dict[str, Any]]:
-        url = "https://api.semanticscholar.org/graph/v1/paper/search"
-        params = {
-            "query": query,
-            "limit": limit,
-            "year": cfg.time_range,
-            "fields": "title,authors,year,abstract,externalIds,venue,citationCount,publicationTypes",
-        }
-        headers: dict[str, str] = {}
-        if cfg.s2_key:
-            headers["x-api-key"] = cfg.s2_key
-        for attempt in range(3):
-            try:
-                resp = http_get(url, params=params, headers=headers, timeout=20)
-                if resp.status_code == 200:
-                    return resp.json().get("data", [])
-                if resp.status_code == 429:
-                    wait = 2 ** (attempt + 1)
-                    time.sleep(wait)
-                    continue
-                return []
-            except Exception:
-                return []
-        return []
+    client = cfg.s2_client
 
     papers: list[dict[str, Any]] = []
     for q in cfg.search_keywords[:3]:
-        for r in s2_search(q, limit=10):
+        try:
+            results = client.paper_search(q, limit=10, year=cfg.time_range)
+        except S2Error as exc:
+            print(f"  !! Semantic Scholar failed for query {q!r}: {exc}")
+            continue
+        for r in results:
             authors = ensure_authors([a.get("name", "") for a in r.get("authors", [])])
             papers.append({
                 "title": r.get("title"),
                 "authors": authors,
                 "year": r.get("year"),
                 "abstract": clean_html(r.get("abstract")),
-                "doi": r.get("externalIds", {}).get("DOI") if r.get("externalIds") else None,
+                "doi": r.get("externalIds", {}).get("DOI") if isinstance(r.get("externalIds"), dict) else None,
                 "source": r.get("venue"),
                 "citation_count": r.get("citationCount", 0),
-                "is_oa": False,
+                "is_oa": bool(r.get("isOpenAccess", False)),
                 "search_source": "semantic_scholar",
                 "search_query_used": q,
             })
-        time.sleep(1)
     print(f"  -> Found {len(papers)} papers from Semantic Scholar")
+    if not papers:
+        detail = ""
+        if client.api_key and client.key_disabled:
+            detail = (
+                " (API key rejected with 403 — keyless pool is heavily throttled; "
+                "renew the key at https://www.semanticscholar.org/product/api)"
+            )
+        elif not client.api_key:
+            detail = " (no API key configured; keyless pool is heavily throttled)"
+        cfg.layer_warnings.append(f"layer1_semantic_scholar returned 0 papers{detail}")
     return papers
+
+
+def _year_in_range(year: Any, time_range: str | None) -> bool:
+    """True if year is unknown or falls inside a 'YYYY-YYYY' / 'YYYY-' range."""
+    try:
+        year_val = int(str(year).strip()[:4])
+    except (ValueError, TypeError):
+        return True
+    bounds = str(time_range or "").split("-")
+    try:
+        low = int(bounds[0])
+    except (ValueError, IndexError):
+        return True
+    if year_val < low:
+        return False
+    if len(bounds) > 1 and bounds[1].strip():
+        try:
+            high = int(bounds[1])
+        except ValueError:
+            return True
+        if year_val > high:
+            return False
+    return True
+
+
+def _seed_score(paper: dict[str, Any], keywords: list[str]) -> tuple[int, int, int]:
+    """Rank seed candidates: topical keyword coverage first, citations second.
+
+    Raw citation sorting lets loosely-matched but hugely cited papers (e.g.
+    GLOBOCAN cancer statistics) hijack the recommender and pull the corpus
+    off-topic — a zero-keyword-hit paper must never out-rank an on-topic one.
+    """
+    title = str(paper.get("title") or "").lower()
+    abstract = str(paper.get("abstract") or "").lower()
+    text = f"{title} {abstract}"
+    kw_hits = sum(1 for kw in keywords if kw.lower() in text)
+    title_hits = sum(1 for kw in keywords if kw.lower() in title)
+    return (kw_hits, title_hits, paper.get("citation_count", 0) or 0)
+
+
+def _s2_recommendation_expansion(cfg: SearchConfig, all_papers: list[dict[str, Any]], seeds: int) -> None:
+    """Expand the corpus with Semantic Scholar 'recommended papers' (in-place).
+
+    Seeds are the most on-topic, highly-cited corpus papers that carry a DOI;
+    each seed's recommendations are fetched via GET /papers/forpaper/{id} and
+    appended with search_source='s2_recommendations' so dedup/scoring treat
+    them normally.
+    """
+    if seeds <= 0:
+        return
+    client = cfg.s2_client
+    if not client.api_key or client.key_disabled:
+        print(
+            "\n[Layer 1b] S2 recommendation expansion skipped "
+            f"({client.key_status()}; recommendations need a working key to avoid the congested keyless pool)"
+        )
+        return
+
+    print(f"\n[Layer 1b] Semantic Scholar recommendation expansion ({seeds} seed(s))...")
+    candidates = [p for p in all_papers if _clean_value(p.get("doi"))]
+    candidates.sort(key=lambda p: _seed_score(p, cfg.search_keywords), reverse=True)
+    seed_dois: list[str] = []
+    seen: set[str] = set()
+    for paper in candidates:
+        doi = _clean_value(paper.get("doi"))
+        if doi and doi not in seen:
+            seen.add(doi)
+            seed_dois.append(doi)
+        if len(seed_dois) >= seeds:
+            break
+
+    if not seed_dois:
+        print("  -> No seed papers with DOI available; skipped")
+        return
+
+    print("  seeds: " + "; ".join(
+        f"{doi} ({next(p['title'][:40] for p in all_papers if _clean_value(p.get('doi')) == doi)}...)"
+        for doi in seed_dois
+    ))
+
+    added = 0
+    for doi in seed_dois:
+        try:
+            recs = client.recommend_for_paper(f"DOI:{doi}", limit=15)
+        except S2Error as exc:
+            print(f"  !! S2 recommendations failed for DOI:{doi}: {exc}")
+            cfg.layer_warnings.append(f"layer1b_s2_recommendations failed for DOI:{doi}: {exc}")
+            continue
+        for r in recs:
+            if not _year_in_range(r.get("year"), cfg.time_range):
+                continue
+            authors = ensure_authors([a.get("name", "") for a in r.get("authors", [])])
+            all_papers.append({
+                "title": r.get("title"),
+                "authors": authors,
+                "year": r.get("year"),
+                "abstract": clean_html(r.get("abstract")),
+                "doi": r.get("externalIds", {}).get("DOI") if isinstance(r.get("externalIds"), dict) else None,
+                "source": r.get("venue"),
+                "citation_count": r.get("citationCount", 0),
+                "is_oa": bool(r.get("isOpenAccess", False)),
+                "search_source": "s2_recommendations",
+                "search_query_used": f"forpaper:{doi}",
+            })
+            added += 1
+    print(f"  -> Added {added} recommended papers from {len(seed_dois)} seed(s)")
+    if added == 0:
+        cfg.layer_warnings.append("layer1b_s2_recommendations added 0 papers")
 
 
 def _layer2_openalex(cfg: SearchConfig) -> list[dict[str, Any]]:
@@ -902,6 +1016,7 @@ _SOURCE_PRIORITY = {
     "openalex": 1,
     "core": 2,
     "semantic_scholar": 3,
+    "s2_recommendations": 3,
     "crossref_free": 4,
     "europe_pmc": 5,
     "arxiv": 6,
@@ -980,7 +1095,17 @@ def score_and_finalize(papers: list[dict[str, Any]], search_keywords: list[str],
         paper["relevance_score"] = min(score, 1.0)
 
     papers.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
-    papers = papers[:top_n]
+
+    # Reserve ~10% of the final slots for S2-recommender papers. They are
+    # topically relevant by construction but rarely contain the literal
+    # search keywords, so plain relevance scoring under-ranks them.
+    reserved = max(1, top_n // 10) if top_n >= 10 else 0
+    rec_papers = [p for p in papers if p.get("search_source") == "s2_recommendations"]
+    rec_kept = rec_papers[:reserved]
+    non_rec = [p for p in papers if p.get("search_source") != "s2_recommendations"]
+    top_n_minus = max(1, top_n - len(rec_kept))
+    selected = non_rec[:top_n_minus] + rec_kept
+    papers = selected[:top_n]
 
     for paper in papers:
         abstract = paper.get("abstract", "") or ""
@@ -1018,6 +1143,7 @@ def run_search(
     key_concepts: list[str] | None = None,
     time_range: str | None = None,
     top_n: int = 100,
+    s2_recommend_seeds: int | None = None,
 ) -> dict[str, Any]:
     """Run the full 6-layer literature search pipeline.
 
@@ -1030,15 +1156,18 @@ def run_search(
         - Returns the corpus dict
 
     Args:
-        run_dir:       output directory for corpus.json
-        config_path:   path to api_keys.json (default: <skill>/config/api_keys.json)
-        rq_path:       optional rq_final.json path for keyword/time boundaries
-        corpus_path:   optional explicit corpus.json output path
-        keywords:      optional explicit keyword list (used if rq_path absent)
-        key_concepts:  optional concept list (defaults to keywords if absent)
-        time_range:    year range string, e.g. "20YY-20YY". Defaults to the
-                       last few years when omitted and no rq_path is given.
-        top_n:         max papers to retain after scoring (default 100)
+        run_dir:            output directory for corpus.json
+        config_path:        path to api_keys.json (default: <skill>/config/api_keys.json)
+        rq_path:            optional rq_final.json path for keyword/time boundaries
+        corpus_path:        optional explicit corpus.json output path
+        keywords:           optional explicit keyword list (used if rq_path absent)
+        key_concepts:       optional concept list (defaults to keywords if absent)
+        time_range:         year range string, e.g. "20YY-20YY". Defaults to the
+                            last few years when omitted and no rq_path is given.
+        top_n:              max papers to retain after scoring (default 100)
+        s2_recommend_seeds: S2 recommendation expansion seeds (None = config or
+                            default 3; 0 disables). Recommended-papers expansion
+                            needs a working S2 key to avoid the keyless pool.
     """
     config_path = config_path or _DEFAULT_CONFIG_PATH
     corpus_path = corpus_path or os.path.join(run_dir, "corpus.json")
@@ -1082,6 +1211,11 @@ def run_search(
 
     all_papers: list[dict[str, Any]] = []
     all_papers.extend(_layer1_semantic_scholar(cfg))
+    # Layer 1b: S2 recommended-papers expansion (after Layer 1, before dedup,
+    # so the recommendations also flow through enrichment and scoring).
+    expansion_seeds = cfg.s2_recommend_seeds if s2_recommend_seeds is None else s2_recommend_seeds
+    if cfg.s2_recommendations:
+        _s2_recommendation_expansion(cfg, all_papers, expansion_seeds)
     all_papers.extend(_layer2_openalex(cfg))
     all_papers.extend(_layer3_core(cfg))
     all_papers.extend(_layer4_scopus(cfg))
@@ -1093,6 +1227,11 @@ def run_search(
 
     search_metadata = {
         "layer1_semantic_scholar": {"papers_found": sum(1 for p in all_papers if p["search_source"] == "semantic_scholar")},
+        "layer1b_s2_recommendations": {
+            "enabled": bool(cfg.s2_recommendations),
+            "seeds_requested": expansion_seeds,
+            "papers_found": sum(1 for p in all_papers if p["search_source"] == "s2_recommendations"),
+        },
         "layer2_openalex": {"papers_found": sum(1 for p in all_papers if p["search_source"] == "openalex")},
         "layer3_core": {"papers_found": sum(1 for p in all_papers if p["search_source"] == "core")},
         "layer4_scopus": {"papers_found": sum(1 for p in all_papers if p["search_source"] == "scopus")},
@@ -1108,6 +1247,7 @@ def run_search(
         "search_date": time.strftime("%Y-%m-%d"),
         "time_range": time_range,
         "search_keywords": search_keywords,
+        "warnings": list(cfg.layer_warnings),
     }
 
     corpus = {"papers": all_papers, "search_metadata": search_metadata}
@@ -1129,6 +1269,8 @@ if __name__ == "__main__":
     parser.add_argument("--keywords", nargs="*", help="Explicit keyword list (if no --rq)")
     parser.add_argument("--time-range", default=None, help=f"Year range, e.g. 20YY-20YY (default: {default_time_range()})")
     parser.add_argument("--top-n", type=int, default=100)
+    parser.add_argument("--s2-recommend-seeds", type=int, default=None, metavar="N",
+                        help="S2 recommended-papers expansion seeds (0 disables; default: config or 3)")
     args = parser.parse_args()
 
     run_search(
@@ -1138,4 +1280,5 @@ if __name__ == "__main__":
         keywords=args.keywords,
         time_range=args.time_range,
         top_n=args.top_n,
+        s2_recommend_seeds=args.s2_recommend_seeds,
     )

@@ -106,6 +106,7 @@ enrichment:
 | Layer | Sources | Auth |
 |---|---|---|
 | 1 | Semantic Scholar | Key |
+| 1b | S2 recommended papers (optional) | Key |
 | 2 | OpenAlex | Key |
 | 3 | CORE | key |
 | 4 | Scopus | key |
@@ -115,6 +116,14 @@ enrichment:
 Results are deduplicated by normalized title with **source-priority merging** —
 when the same paper appears in several databases, the highest-priority record
 wins and missing fields are backfilled from the others.
+
+Layer 1b (Semantic Scholar recommendations) is **off by default** — it needs a
+working S2 key, since the keyless pool is heavily throttled. Enable via
+`semantic_scholar.recommendations: true` in `config/api_keys.json`, or pass
+`--s2-recommend-seeds N` to `run_search.py` (0 disables, default 3). The
+expansion picks the most on-topic corpus papers with DOIs and asks S2 for
+`forpaper` recommendations; final scoring reserves ~10% of the `--top-n` slots
+for those papers.
 
 Conservative rate limiting throughout (inter-request delays, exponential backoff
 on HTTP 429). Designed for unattended runs.
@@ -137,6 +146,39 @@ For every paper:
 - Generates collision-resistant citation keys:
   `surname20YY` → `surname_j20YY` → `surname_j20YY_title1a2b`
 - Writes a clean `references.bib`
+
+### 4. Semantic Scholar direct access — `run_s2.py`
+
+Full S2 API family coverage on top of `lib/s2.py` — paper, author,
+**recommendations**, and **bulk datasets**:
+
+```bash
+# Paper search / details / title match / citations / references
+python run_s2.py paper "attention is all you need" --limit 5
+python run_s2.py paper --id DOI:10.1038/nature12373
+python run_s2.py match "Attention Is All You Need"
+python run_s2.py paper --id DOI:10.1038/nature12373 --citations
+python run_s2.py paper --id DOI:10.1038/nature12373 --references
+
+# Author lookup
+python run_s2.py author "Oren Etzioni"
+python run_s2.py author --id 1741101 --papers
+
+# Recommended papers — single seed or positive/negative lists
+python run_s2.py recommend --id DOI:10.1038/nature12373 --limit 10
+python run_s2.py recommend --positive DOI:10.1038/nature12373,arXiv:1706.03762
+
+# S2AG bulk datasets — releases, per-dataset download manifests, incremental diffs
+python run_s2.py datasets
+python run_s2.py datasets --release latest
+python run_s2.py datasets --release latest --name abstracts
+python run_s2.py datasets --name abstracts --diffs-from 2026-07-28
+```
+
+The list-based recommender uses the current route `POST /recommendations/v1/papers/`;
+the historical `/papers/forlist` route was retired and answers 405. The client
+enforces S2's 1 req/s limit, retries 429/5xx with exponential backoff, and drops
+a revoked key (403) to the keyless public pool.
 
 ---
 
@@ -193,12 +235,19 @@ run_search.py
   --concepts C...     Key concepts for Scopus queries (default: keywords)
   --time-range R      Year range, e.g. 20YY-20YY (ignored with --rq)
   --top-n N           Max papers after scoring (default 100)
+  --s2-recommend-seeds N   S2 recommendation expansion seeds (0 disables;
+                           default: config / 3). Requires a working S2 key.
 
 run_check.py
   --run-dir DIR       Directory containing corpus.json (required)
   --corpus PATH       Override corpus.json input path
   --out-bib PATH      Override references.bib output path
   --out-keys PATH     Override citation_keys.json output path
+
+run_s2.py
+  --config PATH       api_keys.json path (default: config/api_keys.json)
+  --out PATH          Write JSON to this file instead of stdout
+  subcommands: paper | match | author | recommend | datasets
 ```
 
 ### As a library
@@ -244,10 +293,14 @@ any API keys. See [examples/README.md](examples/README.md).
 
 ```
 VeriRefer/
+├── SKILL.md                    # skill spec (read this first)
+├── README.md                   # this file
 ├── run_search.py               # CLI: literature search
 ├── run_check.py                # CLI: DOI verification + metadata completion
+├── run_s2.py                   # CLI: S2 paper/author/recommendations/datasets
 ├── lib/
-│   ├── http_client.py          # HTTP client (stdlib, optional requests)
+│   ├── http_client.py          # HTTP client (stdlib + requests, GET + POST)
+│   ├── s2.py                   # Semantic Scholar client (graph + rec + datasets)
 │   ├── search.py               # 6-layer search, dedup, scoring, enrichment
 │   └── reference_checker.py    # DOI validation, Crossref/OpenAlex, BibTeX
 ├── config/
@@ -272,6 +325,60 @@ VeriRefer/
   the paper exists — not that it says what a summary claims it says.
 - **Relevance scoring is keyword-based**, deliberately simple and transparent.
   Treat `relevance_score` as a coarse sort, not a judgement of quality.
+
+## Changelog
+
+### v1.1 (2026-08-21)
+
+**Bug fixes**
+
+- **CORE 403 "error code: 1010"** — the default `urllib`/`requests`
+  User-Agent was rejected as a bot by CORE's Cloudflare front, not as a
+  credential failure. The HTTP client now always sends a browser-like
+  User-Agent unless the caller overrides it (`lib/http_client.py`).
+- **S2 recommendations route change** — the historical
+  `/recommendations/v1/papers/forlist` endpoint was retired and answers
+  `405 Method Not Allowed`. The list-based recommender now uses the current
+  `POST /recommendations/v1/papers/` route, verified against the live
+  swagger.
+- **Revoked Semantic Scholar keys no longer abort a run** — a key that
+  answers `403` (revoked/expired) is dropped mid-run and the client retries
+  the keyless public pool; a warning tells you to renew the key instead of
+  failing the layer.
+- **Malformed DOI prefixes** — lookups now strip `https://doi.org/`,
+  `http://doi.org/`, and `doi:` prefixes before validation, so raw citation
+  strings resolve instead of failing.
+- **Atomic output writes** — `references.bib` and `citation_keys.json` are
+  written via `.tmp` + `os.replace()`, so an interrupted run never leaves a
+  truncated file.
+- **Recency scoring** — the bonus for recent papers is computed against the
+  current year at run time, not a hardcoded cutoff, so scoring does not go
+  stale as years pass.
+
+**New features**
+
+- **S2 recommended-papers expansion (Layer 1b)** — the search pipeline can
+  grow the corpus with Semantic Scholar `forpaper` recommendations seeded
+  from the most on-topic papers. Enable via `semantic_scholar.recommendations`
+  in `config/api_keys.json` or `--s2-recommend-seeds N` on `run_search.py`.
+- **S2AG bulk datasets CLI** — `run_s2.py datasets` lists releases,
+  per-dataset download manifests, and incremental diffs without touching the
+  API directly.
+- **Europe PMC layer** — a new Layer-5 source adds biomed open-access
+  full-text coverage (`europe_pmc` in `search_source`).
+- **Zotero / CSL-JSON export** — `examples/corpus_to_csl.py` converts a
+  verified corpus into CSL-JSON and imports it into a local Zotero library
+  via `zotero-cli`, with `--verified-only` / `--require-doi` / `--limit`
+  guards (see `examples/README.md`).
+- **OpenAlex biblio backfill** — volume/issue/pages are completed from
+  OpenAlex when Crossref lacks them.
+- **Scopus query control** — `--concepts` on `run_search.py` lets you
+  provide key concepts separately from the search keywords.
+- **Hallucination blocklist** — `config/hallucinations.json` (git-ignored,
+  ships empty) blocks known-fabricated `[surname, year]` records that slip
+  past DOI/Crossref verification.
+- **Collision-resistant citation keys** — `surname20YY` →
+  `surname_j20YY` → `surname_j20YY_title1a2b` guarantees unique BibTeX keys.
 
 ## License
 

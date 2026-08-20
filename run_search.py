@@ -43,6 +43,8 @@ def main() -> int:
     parser.add_argument("--concepts", nargs="+", help="Key concepts for Scopus query construction (defaults to keywords)")
     parser.add_argument("--time-range", default=None, help=f"Year range, e.g. 20YY-20YY (default: {default_time_range()}, used only without --rq)")
     parser.add_argument("--top-n", type=int, default=100, help="Max papers to keep after scoring (default 100)")
+    parser.add_argument("--s2-recommend-seeds", type=int, default=None, metavar="N",
+                        help="S2 recommended-papers expansion: number of seed papers (0 disables; default: config / 3). Requires a working Semantic Scholar key.")
     args = parser.parse_args()
 
     if not args.rq and not args.keywords:
@@ -59,6 +61,7 @@ def main() -> int:
         key_concepts=args.concepts,
         time_range=args.time_range,
         top_n=args.top_n,
+        s2_recommend_seeds=args.s2_recommend_seeds,
     )
     n = len(corpus.get("papers", []))
     print(f"\n[DONE] Literature search complete: {n} papers.")
